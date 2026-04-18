@@ -11,13 +11,14 @@
 require_once __DIR__ . '/../../config/database.php';
 
 /**
- * 处理图片生成BMP（7色有序抖动，800x480）
+ * 处理图片生成BMP（7色有序抖动）
  * 规则：cloud/uploads/yyyy/mm/xxx.png  =>  cloud/cache/yyyy/mm/xxx.bmp
  * 
  * @param string $source_path 源图片绝对路径
+ * @param array $options 渲染参数
  * @return array ['success' => bool, 'bmp_file' => string, 'message' => string]
  */
-function process_image_to_bmp($source_path) {
+function process_image_to_bmp($source_path, $options = []) {
     if (!extension_loaded('gd')) {
         return ['success' => false, 'bmp_file' => '', 'message' => 'PHP 未启用 GD 库'];
     }
@@ -27,7 +28,7 @@ function process_image_to_bmp($source_path) {
     }
     
     // 计算相对于 uploads 的路径
-    $uploads_base = rtrim(str_replace('\\', '/', UPLOAD_PATH), '/');
+    $uploads_base = getNormalizedUploadsBase();
     $source_norm = str_replace('\\', '/', realpath($source_path));
     
     if ($source_norm && strpos($source_norm, $uploads_base . '/') === 0) {
@@ -36,14 +37,16 @@ function process_image_to_bmp($source_path) {
         $relative_path = basename($source_path);
     }
     
-    $bmp_name = pathinfo($relative_path, PATHINFO_FILENAME) . '.bmp';
+    $normalizedOptions = normalizeBmpOptions($options);
+    $cacheSignature = substr(md5(json_encode($normalizedOptions)), 0, 12);
+    $bmp_name = pathinfo($relative_path, PATHINFO_FILENAME) . '__' . $cacheSignature . '.bmp';
     $relative_dir = dirname($relative_path);
     if ($relative_dir === '.' || $relative_dir === '/') {
         $relative_dir = '';
     }
     
     // cache_base 指向 /cloud/cache/ （imgprocess.php 在 backend/api/imgprocess/，向上3级到 cloud/）
-    $cache_base = rtrim(str_replace('\\', '/', dirname(__DIR__, 3) . '/cache/'), '/');
+    $cache_base = getNormalizedCacheBase();
     $cache_dir = $cache_base . ($relative_dir ? '/' . $relative_dir : '');
     $cache_file = $cache_dir . '/' . $bmp_name;
     
@@ -66,7 +69,7 @@ function process_image_to_bmp($source_path) {
             }
         }
         
-        $result = generate_bmp($source_path, $cache_file, 800, 480);
+        $result = generate_bmp($source_path, $cache_file, $normalizedOptions);
         if (!$result) {
             return ['success' => false, 'bmp_file' => '', 'message' => 'BMP 生成失败（GD处理异常）'];
         }
@@ -85,56 +88,218 @@ function process_image_to_bmp($source_path) {
     
     $bmp_relative = ltrim(substr(str_replace('\\', '/', $cache_file_real), strlen($cache_base) + 1), '/');
     
-    return ['success' => true, 'bmp_file' => $bmp_relative, 'message' => '生成成功'];
+    return [
+        'success' => true,
+        'bmp_file' => $bmp_relative,
+        'message' => '生成成功',
+        'target_width' => $normalizedOptions['target_width'],
+        'target_height' => $normalizedOptions['target_height']
+    ];
+}
+
+function getNormalizedUploadsBase() {
+    static $uploadsBase = null;
+
+    if ($uploadsBase !== null) {
+        return $uploadsBase;
+    }
+
+    $resolved = realpath(UPLOAD_PATH);
+    if ($resolved !== false) {
+        $uploadsBase = rtrim(str_replace('\\', '/', $resolved), '/');
+    } else {
+        $uploadsBase = rtrim(str_replace('\\', '/', UPLOAD_PATH), '/');
+    }
+
+    return $uploadsBase;
+}
+
+function getNormalizedCacheBase() {
+    static $cacheBase = null;
+
+    if ($cacheBase !== null) {
+        return $cacheBase;
+    }
+
+    $rawPath = dirname(__DIR__, 3) . '/cache/';
+    $resolved = realpath($rawPath);
+    if ($resolved !== false) {
+        $cacheBase = rtrim(str_replace('\\', '/', $resolved), '/');
+    } else {
+        $cacheBase = rtrim(str_replace('\\', '/', $rawPath), '/');
+    }
+
+    return $cacheBase;
+}
+
+function normalizeBmpOptions($options = []) {
+    if (function_exists('normalizeBmpRenderOptions')) {
+        return normalizeBmpRenderOptions($options);
+    }
+
+    $orientation = ($options['orientation'] ?? 'landscape') === 'portrait' ? 'portrait' : 'landscape';
+
+    $rotate = intval($options['rotate'] ?? 0);
+    if ($rotate !== 90) {
+        $rotate = 0;
+    }
+
+    $cropCenterX = isset($options['crop_center_x']) ? floatval($options['crop_center_x']) : 0.5;
+    $cropCenterY = isset($options['crop_center_y']) ? floatval($options['crop_center_y']) : 0.5;
+    $cropZoom = isset($options['crop_zoom']) ? floatval($options['crop_zoom']) : 1.0;
+
+    return array(
+        'orientation' => $orientation,
+        'rotate' => $rotate,
+        'crop_center_x' => max(0.0, min(1.0, $cropCenterX)),
+        'crop_center_y' => max(0.0, min(1.0, $cropCenterY)),
+        'crop_zoom' => max(1.0, min(4.0, $cropZoom)),
+        'target_width' => $orientation === 'portrait' ? 480 : 800,
+        'target_height' => $orientation === 'portrait' ? 800 : 480
+    );
+}
+
+function load_source_image($input, $imageType) {
+    $image = false;
+
+    switch ($imageType) {
+        case IMAGETYPE_JPEG:
+            $image = @imagecreatefromjpeg($input);
+            break;
+        case IMAGETYPE_PNG:
+            $image = @imagecreatefrompng($input);
+            break;
+        case IMAGETYPE_GIF:
+            $image = @imagecreatefromgif($input);
+            break;
+        case IMAGETYPE_WEBP:
+            $image = function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($input) : false;
+            break;
+    }
+
+    if ($image !== false) {
+        return $image;
+    }
+
+    $raw = @file_get_contents($input);
+    if ($raw === false) {
+        return false;
+    }
+
+    return @imagecreatefromstring($raw);
+}
+
+function create_oriented_source($src, $rotate) {
+    if ($rotate === 90) {
+        $rotated = @imagerotate($src, -90, 0);
+        if ($rotated !== false) {
+            imagedestroy($src);
+            return $rotated;
+        }
+
+        error_log('create_oriented_source failed when rotate=90');
+    }
+
+    return $src;
+}
+
+function calculate_crop_rect($srcWidth, $srcHeight, $targetWidth, $targetHeight, $zoom, $centerX, $centerY) {
+    $srcRatio = $srcWidth / $srcHeight;
+    $targetRatio = $targetWidth / $targetHeight;
+
+    if ($srcRatio > $targetRatio) {
+        $baseCropHeight = $srcHeight;
+        $baseCropWidth = $srcHeight * $targetRatio;
+    } else {
+        $baseCropWidth = $srcWidth;
+        $baseCropHeight = $srcWidth / $targetRatio;
+    }
+
+    $cropWidth = max(1.0, $baseCropWidth / $zoom);
+    $cropHeight = max(1.0, $baseCropHeight / $zoom);
+
+    $centerPixelX = $centerX * $srcWidth;
+    $centerPixelY = $centerY * $srcHeight;
+
+    $halfCropWidth = $cropWidth / 2;
+    $halfCropHeight = $cropHeight / 2;
+
+    $minCenterX = $halfCropWidth;
+    $maxCenterX = $srcWidth - $halfCropWidth;
+    $minCenterY = $halfCropHeight;
+    $maxCenterY = $srcHeight - $halfCropHeight;
+
+    if ($maxCenterX < $minCenterX) {
+        $centerPixelX = $srcWidth / 2;
+    } else {
+        $centerPixelX = min(max($centerPixelX, $minCenterX), $maxCenterX);
+    }
+
+    if ($maxCenterY < $minCenterY) {
+        $centerPixelY = $srcHeight / 2;
+    } else {
+        $centerPixelY = min(max($centerPixelY, $minCenterY), $maxCenterY);
+    }
+
+    return [
+        'x' => (int) round($centerPixelX - $halfCropWidth),
+        'y' => (int) round($centerPixelY - $halfCropHeight),
+        'width' => (int) round($cropWidth),
+        'height' => (int) round($cropHeight)
+    ];
 }
 
 /**
  * 生成 24位 BMP V3（7色有序抖动）
  */
-function generate_bmp($input, $output, $width, $height) {
+function generate_bmp($input, $output, $options) {
+    $targetWidth = $options['target_width'];
+    $targetHeight = $options['target_height'];
     $info = @getimagesize($input);
     if (!$info) return false;
-    
-    switch($info[2]) {
-        case IMAGETYPE_JPEG: $src = @imagecreatefromjpeg($input); break;
-        case IMAGETYPE_PNG: $src = @imagecreatefrompng($input); break;
-        default: return false;
-    }
-    
+
+    $src = load_source_image($input, $info[2]);
     if (!$src) return false;
-    
-    $dst = imagecreatetruecolor($width, $height);
+
+    $src = create_oriented_source($src, $options['rotate']);
+
+    $dst = imagecreatetruecolor($targetWidth, $targetHeight);
     if (!$dst) {
         imagedestroy($src);
         return false;
     }
-    
-    // 等比缩放+居中裁剪
-    $src_w = imagesx($src);
-    $src_h = imagesy($src);
-    $src_ratio = $src_w / $src_h;
-    $dst_ratio = $width / $height;
-    
-    if ($src_ratio > $dst_ratio) {
-        $crop_h = $src_h;
-        $crop_w = intval($src_h * $dst_ratio);
-        $src_x = intval(($src_w - $crop_w) / 2);
-        $src_y = 0;
-    } else {
-        $crop_w = $src_w;
-        $crop_h = intval($src_w / $dst_ratio);
-        $src_x = 0;
-        $src_y = intval(($src_h - $crop_h) / 2);
-    }
-    
-    imagecopyresampled($dst, $src, 0, 0, $src_x, $src_y, $width, $height, $crop_w, $crop_h);
+
+    $srcWidth = imagesx($src);
+    $srcHeight = imagesy($src);
+    $cropRect = calculate_crop_rect(
+        $srcWidth,
+        $srcHeight,
+        $targetWidth,
+        $targetHeight,
+        $options['crop_zoom'],
+        $options['crop_center_x'],
+        $options['crop_center_y']
+    );
+
+    imagecopyresampled(
+        $dst,
+        $src,
+        0,
+        0,
+        $cropRect['x'],
+        $cropRect['y'],
+        $targetWidth,
+        $targetHeight,
+        $cropRect['width'],
+        $cropRect['height']
+    );
     imagedestroy($src);
-    
-    apply_ordered_dither($dst, $width, $height);
-    
-    $result = write_bmp_v3($dst, $output, $width, $height);
+
+    apply_ordered_dither($dst, $targetWidth, $targetHeight);
+
+    $result = write_bmp_v3($dst, $output, $targetWidth, $targetHeight);
     imagedestroy($dst);
-    
+
     return $result;
 }
 
@@ -252,6 +417,13 @@ if (basename($_SERVER['SCRIPT_NAME']) === 'imgprocess.php') {
     $imageId = intval($_GET['image_id'] ?? ($_POST['image_id'] ?? 0));
     $file = $_GET['file'] ?? ($_POST['file'] ?? '');       // uploads相对路径
     $absSource = $_GET['source'] ?? ($_POST['source'] ?? ''); // 绝对路径
+    $options = [
+        'orientation' => $_GET['orientation'] ?? ($_POST['orientation'] ?? 'landscape'),
+        'rotate' => $_GET['rotate'] ?? ($_POST['rotate'] ?? 0),
+        'crop_center_x' => $_GET['crop_center_x'] ?? ($_POST['crop_center_x'] ?? 0.5),
+        'crop_center_y' => $_GET['crop_center_y'] ?? ($_POST['crop_center_y'] ?? 0.5),
+        'crop_zoom' => $_GET['crop_zoom'] ?? ($_POST['crop_zoom'] ?? 1)
+    ];
     
     // 1. 优先使用绝对路径
     if (!empty($absSource) && file_exists($absSource)) {
@@ -284,13 +456,15 @@ if (basename($_SERVER['SCRIPT_NAME']) === 'imgprocess.php') {
         exit;
     }
     
-    $result = process_image_to_bmp($source);
+    $result = process_image_to_bmp($source, $options);
     
     if ($result['success']) {
         echo json_encode([
             'success' => true,
             'bmp_file' => $result['bmp_file'],
             'bmp_url' => 'http://47.108.232.40:2026/cloud/imget.php?file=' . urlencode($result['bmp_file']),
+            'target_width' => $result['target_width'],
+            'target_height' => $result['target_height'],
             'message' => $result['message']
         ]);
     } else {

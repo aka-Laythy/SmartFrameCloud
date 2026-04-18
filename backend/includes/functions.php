@@ -115,6 +115,93 @@ function validateDeviceUID($uid) {
 }
 
 /**
+ * 规范化 BMP 渲染参数
+ * @param array $options
+ * @return array
+ */
+function normalizeBmpRenderOptions(array $options = []) {
+    $orientation = ($options['orientation'] ?? 'landscape') === 'portrait' ? 'portrait' : 'landscape';
+
+    $rotate = intval($options['rotate'] ?? 0);
+    if ($rotate !== 90) {
+        $rotate = 0;
+    }
+
+    $cropCenterX = isset($options['crop_center_x']) ? floatval($options['crop_center_x']) : 0.5;
+    $cropCenterY = isset($options['crop_center_y']) ? floatval($options['crop_center_y']) : 0.5;
+    $cropZoom = isset($options['crop_zoom']) ? floatval($options['crop_zoom']) : 1.0;
+
+    $cropCenterX = max(0.0, min(1.0, $cropCenterX));
+    $cropCenterY = max(0.0, min(1.0, $cropCenterY));
+    $cropZoom = max(1.0, min(4.0, $cropZoom));
+
+    return [
+        'orientation' => $orientation,
+        'rotate' => $rotate,
+        'crop_center_x' => round($cropCenterX, 6),
+        'crop_center_y' => round($cropCenterY, 6),
+        'crop_zoom' => round($cropZoom, 4),
+        'target_width' => $orientation === 'portrait' ? 480 : 800,
+        'target_height' => $orientation === 'portrait' ? 800 : 480
+    ];
+}
+
+/**
+ * 构建站点绝对URL
+ * @param string $path
+ * @return string
+ */
+function buildAppAbsoluteUrl($path) {
+    $baseUrl = rtrim(APP_URL, '/');
+    $normalizedPath = '/' . ltrim($path, '/');
+    return $baseUrl . $normalizedPath;
+}
+
+/**
+ * 生成6位动态绑定码
+ * @return string
+ */
+function generateDynamicBindCode() {
+    return str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+}
+
+/**
+ * 判断动态绑定码格式
+ * @param string $code
+ * @return bool
+ */
+function validateDynamicBindCode($code) {
+    return preg_match('/^\d{6}$/', $code) === 1;
+}
+
+/**
+ * 为未绑定设备生成不冲突的动态绑定码
+ * @param PDO $db
+ * @return string
+ */
+function issueUniqueDynamicBindCode($db) {
+    for ($i = 0; $i < 10; $i++) {
+        $code = generateDynamicBindCode();
+        $stmt = $db->prepare("
+            SELECT id
+            FROM devices
+            WHERE dyn_bound_code = ?
+              AND user_id IS NULL
+              AND dyn_bound_code_expires_at IS NOT NULL
+              AND dyn_bound_code_expires_at > NOW()
+            LIMIT 1
+        ");
+        $stmt->execute([$code]);
+
+        if (!$stmt->fetch()) {
+            return $code;
+        }
+    }
+
+    throw new Exception('动态绑定码生成失败，请稍后重试');
+}
+
+/**
  * 上传图片
  * @param array $file $_FILES中的文件
  * @param int $user_id
@@ -288,13 +375,34 @@ function publishMQTT($topic, $payload) {
 }
 
 /**
+ * 下发动态绑定码到设备
+ * @param string $deviceUid
+ * @param string $bindCode
+ * @param int $expiresIn
+ * @return bool
+ */
+function publishDynamicBindCodeToDevice($deviceUid, $bindCode, $expiresIn = 300) {
+    $topic = 'device/' . strtoupper($deviceUid) . '/bound';
+    $payload = [
+        'event' => 'dyn_bound_code',
+        'device_uid' => strtoupper($deviceUid),
+        'dyn_bound_code' => $bindCode,
+        'expires_in' => $expiresIn,
+        'timestamp' => time()
+    ];
+
+    return publishMQTT($topic, $payload);
+}
+
+/**
  * 发送图片到设备
  * @param int $device_id
  * @param int $image_id
  * @param int $user_id
+ * @param array $renderOptions
  * @return array
  */
-function sendImageToDevice($device_id, $image_id, $user_id) {
+function sendImageToDevice($device_id, $image_id, $user_id, array $renderOptions = []) {
     $db = getDB();
     
     // 获取设备信息
@@ -321,14 +429,24 @@ function sendImageToDevice($device_id, $image_id, $user_id) {
     if (!file_exists($sourcePath)) {
         throw new Exception('源图片文件不存在: ' . $sourcePath);
     }
-    
-    $bmpResult = process_image_to_bmp($sourcePath);
+
+    $normalizedOptions = normalizeBmpRenderOptions($renderOptions);
+    $bmpResult = process_image_to_bmp($sourcePath, $normalizedOptions);
     if (!$bmpResult['success']) {
+        error_log(sprintf(
+            'sendImageToDevice BMP failed: device_id=%d image_id=%d user_id=%d source=%s options=%s message=%s',
+            $device_id,
+            $image_id,
+            $user_id,
+            $sourcePath,
+            json_encode($normalizedOptions, JSON_UNESCAPED_UNICODE),
+            $bmpResult['message']
+        ));
         throw new Exception('BMP生成失败: ' . $bmpResult['message']);
     }
     
     // 生成BMP图片URL
-    $imageUrl = 'http://47.108.232.40:2026/cloud/imget.php?file=' . urlencode($bmpResult['bmp_file']);
+    $imageUrl = buildAppAbsoluteUrl('imget.php?file=' . urlencode($bmpResult['bmp_file']));
     
     // 构建MQTT消息
     $topic = "device/{$device['device_uid']}/image";
@@ -336,8 +454,10 @@ function sendImageToDevice($device_id, $image_id, $user_id) {
         'image_id' => $image['id'],
         'image_url' => $imageUrl,
         'original_name' => pathinfo($image['original_name'], PATHINFO_FILENAME) . '.bmp',
-        'width' => 800,
-        'height' => 480,
+        'width' => $bmpResult['target_width'],
+        'height' => $bmpResult['target_height'],
+        'orientation' => $normalizedOptions['orientation'],
+        'rotate' => $normalizedOptions['rotate'],
         'timestamp' => time()
     ];
     
@@ -367,6 +487,15 @@ function sendImageToDevice($device_id, $image_id, $user_id) {
         // 更新日志状态为失败
         $stmt = $db->prepare("UPDATE device_image_logs SET status = 2, error_message = ? WHERE id = ?");
         $stmt->execute(['MQTT发布失败', $logId]);
+
+        error_log(sprintf(
+            'sendImageToDevice MQTT failed: device_id=%d image_id=%d user_id=%d topic=%s payload=%s',
+            $device_id,
+            $image_id,
+            $user_id,
+            $topic,
+            json_encode($payload, JSON_UNESCAPED_UNICODE)
+        ));
         
         throw new Exception('图片下发失败，MQTT服务异常');
     }

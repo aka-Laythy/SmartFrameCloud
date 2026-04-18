@@ -26,13 +26,12 @@
                 <span>+</span> 绑定设备
             </button>
         </div>
-        
+
         <div id="devicesContainer" class="devices-list">
             <!-- 设备列表将在这里渲染 -->
         </div>
     </main>
 
-    <!-- 绑定设备模态框 -->
     <div class="modal" id="bindModal">
         <div class="modal-content">
             <div class="modal-header">
@@ -41,17 +40,17 @@
             </div>
             <div class="modal-body">
                 <div class="form-group">
-                    <label class="form-label">设备ID</label>
-                    <input type="text" class="form-input" id="deviceUid" placeholder="请输入64位芯片ID（16位十六进制字符）">
-                    <small style="color: var(--text-muted);">设备ID为64位芯片ID，16位十六进制字符</small>
+                    <label class="form-label">动态绑定码</label>
+                    <input type="text" class="form-input" id="deviceBindCode" placeholder="请输入设备墨水屏上显示的 6 位动态绑定码" maxlength="6">
+                    <small style="color: var(--text-muted);">请先让设备联网，然后输入设备墨水屏上显示的 6 位动态绑定码。</small>
                 </div>
                 <div class="form-group">
                     <label class="form-label">设备名称（可选）</label>
-                    <input type="text" class="form-input" id="deviceName" placeholder="例如：客厅相册">
+                    <input type="text" class="form-input" id="deviceName" placeholder="例如：客厅相框">
                 </div>
                 <div class="form-group">
                     <label class="form-label">设备描述（可选）</label>
-                    <input type="text" class="form-input" id="deviceDesc" placeholder="例如：放在客厅的智能相册">
+                    <input type="text" class="form-input" id="deviceDesc" placeholder="例如：放在客厅电视柜上的智能相册">
                 </div>
             </div>
             <div class="modal-footer">
@@ -61,25 +60,89 @@
         </div>
     </div>
 
-    <!-- 下发图片模态框 -->
     <div class="modal" id="sendModal">
-        <div class="modal-content" style="max-width: 600px;">
+        <div class="modal-content send-modal-content">
             <div class="modal-header">
-                <h3>选择图片下发到设备</h3>
+                <h3>选择图片并下发到设备</h3>
                 <button class="modal-close" onclick="hideSendModal()">&times;</button>
             </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label class="form-label">选择相册</label>
-                    <select class="form-input" id="albumSelect" onchange="loadAlbumImages()">
-                        <option value="">请选择相册</option>
-                    </select>
-                </div>
-                <div id="imageSelector" class="image-selector">
-                    <!-- 图片将在这里渲染 -->
+            <div class="modal-body send-modal-body">
+                <div class="send-workspace">
+                    <div class="send-sidebar">
+                        <div class="send-sidebar-card">
+                            <div class="send-section-head">
+                                <h4>图片来源</h4>
+                                <p>先选相册，再选一张要生成 BMP 的原图。</p>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">选择相册</label>
+                                <select class="form-input" id="albumSelect" onchange="loadAlbumImages()">
+                                    <option value="">请选择相册</option>
+                                </select>
+                            </div>
+                            <div id="imageSelector" class="image-selector">
+                                <!-- 图片缩略图将在这里渲染 -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="send-preview-panel">
+                        <div class="send-preview-header">
+                            <div>
+                                <h4>BMP 下发预览</h4>
+                                <p>软旋转、兴趣区和软裁剪只影响本次生成的 BMP，不会修改 `uploads/` 中的原图。</p>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline render-reset-btn" onclick="resetRenderOptions()">重置调整</button>
+                        </div>
+
+                        <div class="render-toolbar">
+                            <div class="render-group">
+                                <div class="render-group-head">
+                                    <span class="render-label">墨水屏方向</span>
+                                    <span class="render-helper">固定输出尺寸</span>
+                                </div>
+                                <div class="toggle-group">
+                                    <button type="button" class="toggle-btn active" id="orientationLandscape" onclick="setOrientation('landscape')">横屏 800 x 480</button>
+                                    <button type="button" class="toggle-btn" id="orientationPortrait" onclick="setOrientation('portrait')">竖屏 480 x 800</button>
+                                </div>
+                            </div>
+
+                            <div class="render-group">
+                                <div class="render-group-head">
+                                    <span class="render-label">软旋转</span>
+                                    <span class="render-helper">不改原图</span>
+                                </div>
+                                <div class="toggle-group">
+                                    <button type="button" class="toggle-btn active" id="rotate0" onclick="setRotate(0)">保持原方向</button>
+                                    <button type="button" class="toggle-btn" id="rotate90" onclick="setRotate(90)">顺时针 90°</button>
+                                </div>
+                            </div>
+
+                            <div class="render-group">
+                                <div class="render-group-head render-zoom-head">
+                                    <span class="render-label">软裁剪</span>
+                                    <span class="render-value" id="cropZoomValue">1.00x</span>
+                                </div>
+                                <input type="range" class="render-range" id="cropZoom" min="1" max="4" step="0.05" value="1" oninput="updateCropZoom(this.value)">
+                                <small class="render-helper-block">固定输出为当前屏幕尺寸；缩放越大，保留区域越小。</small>
+                            </div>
+                        </div>
+
+                        <div class="preview-stage" id="previewStage">
+                            <canvas id="renderPreviewCanvas" width="800" height="480"></canvas>
+                            <div id="previewPlaceholder" class="preview-placeholder">先从左侧选择一张图片，然后拖动预览来调整“兴趣区”。</div>
+                        </div>
+
+                        <div class="preview-meta">
+                            <span id="previewResolution">输出尺寸：800 x 480</span>
+                            <span id="previewSelectedName">尚未选择图片</span>
+                        </div>
+
+                        <p class="preview-tip">操作说明：方向决定固定输出尺寸，软旋转只调整 BMP 生成方向，拖动预览可以移动兴趣区，软裁剪始终按横屏 800 x 480 或竖屏 480 x 800 固定输出。</p>
+                    </div>
                 </div>
             </div>
-            <div class="modal-footer">
+            <div class="modal-footer send-modal-footer">
                 <button class="btn btn-outline" onclick="hideSendModal()">取消</button>
                 <button class="btn btn-primary" onclick="sendImage()">下发到设备</button>
             </div>
@@ -89,10 +152,71 @@
     <script>
         let devices = [];
         let albums = [];
+        let currentAlbumImages = [];
         let currentDeviceId = null;
         let selectedImageId = null;
+        let selectedImageData = null;
+        let previewLoadToken = 0;
+        let activePointerId = null;
+        let previewDragState = null;
 
-        // 检查登录
+        const renderOptions = getDefaultRenderOptions();
+        const previewState = {
+            sourceImage: null,
+            cropRect: null,
+            orientedWidth: 0,
+            orientedHeight: 0
+        };
+
+        function getDefaultRenderOptions() {
+            return {
+                orientation: 'landscape',
+                rotate: 0,
+                cropCenterX: 0.5,
+                cropCenterY: 0.5,
+                cropZoom: 1
+            };
+        }
+
+        function resetRenderOptions() {
+            const defaults = getDefaultRenderOptions();
+            Object.assign(renderOptions, defaults);
+            syncRenderControls();
+            renderPreview();
+        }
+
+        function getRenderDimensions() {
+            return renderOptions.orientation === 'portrait'
+                ? { width: 480, height: 800 }
+                : { width: 800, height: 480 };
+        }
+
+        function clamp(value, min, max) {
+            return Math.min(max, Math.max(min, value));
+        }
+
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) {
+                return '未知';
+            }
+
+            const date = new Date(dateString);
+            if (Number.isNaN(date.getTime())) {
+                return dateString;
+            }
+
+            return date.toLocaleString('zh-CN');
+        }
+
         async function checkAuth() {
             try {
                 const response = await fetch('backend/api/user/profile.php');
@@ -105,14 +229,13 @@
             }
         }
 
-        // 加载设备列表
         async function loadDevices() {
             try {
                 const response = await fetch('backend/api/devices/list.php');
                 const result = await response.json();
-                
+
                 if (result.success) {
-                    devices = result.data.devices;
+                    devices = result.data.devices || [];
                     renderDevices();
                 }
             } catch (error) {
@@ -120,260 +243,559 @@
             }
         }
 
-        // 渲染设备列表
         function renderDevices() {
             const container = document.getElementById('devicesContainer');
-            
-            if (devices.length === 0) {
+
+            if (!devices.length) {
                 container.innerHTML = `
                     <div class="empty-state">
-                        <div class="empty-state-icon">📱</div>
+                        <div class="empty-state-icon">&#128444;</div>
                         <h3>暂无绑定设备</h3>
-                        <p>点击上方按钮绑定您的智能相册设备</p>
+                        <p>点击上方按钮，使用设备屏幕上的 6 位动态绑定码完成绑定。</p>
                     </div>
                 `;
                 return;
             }
-            
-            container.innerHTML = devices.map(device => `
+
+            container.innerHTML = devices.map((device) => `
                 <div class="device-item">
                     <div class="device-info">
-                        <h4>${device.name || '未命名设备'}</h4>
-                        <p>${device.description || '无描述'}</p>
+                        <h4>${escapeHtml(device.name || '未命名设备')}</h4>
+                        <p>${escapeHtml(device.description || '无描述')}</p>
                         <div class="device-meta">
-                            <span>ID: ${device.device_uid}</span>
-                            <span>绑定时间: ${new Date(device.bound_at).toLocaleDateString()}</span>
-                            <span class="device-status ${getStatusClass(device.status)}">
-                                ${getStatusText(device.status)}
-                            </span>
+                            <span>ID: ${escapeHtml(device.device_uid || '-')}</span>
+                            <span>绑定时间：${formatDate(device.bound_at)}</span>
+                            <span class="device-status ${getStatusClass(device.status)}">${getStatusText(device.status)}</span>
                         </div>
                         ${device.current_image_name ? `
                             <div style="margin-top: 8px; font-size: 0.75rem; color: var(--primary-color);">
-                                当前显示: ${device.current_image_name}
+                                当前显示：${escapeHtml(device.current_image_name)}
                             </div>
                         ` : ''}
                     </div>
                     <div class="device-actions">
-                        <button class="btn btn-primary" onclick="showSendModal(${device.id})">下发图片</button>
-                        <button class="btn btn-danger" onclick="unbindDevice(${device.id})">解绑</button>
+                        <button class="btn btn-primary" onclick="showSendModal(${Number(device.id)})">下发图片</button>
+                        <button class="btn btn-danger" onclick="unbindDevice(${Number(device.id)})">解绑</button>
                     </div>
                 </div>
             `).join('');
         }
 
-        // 获取状态样式
         function getStatusClass(status) {
-            switch (parseInt(status)) {
-                case 1: return 'status-online';
-                case 2: return 'status-offline';
-                default: return 'status-unbound';
+            switch (parseInt(status, 10)) {
+                case 1:
+                    return 'status-online';
+                case 2:
+                    return 'status-offline';
+                default:
+                    return 'status-unbound';
             }
         }
 
-        // 获取状态文本
         function getStatusText(status) {
-            switch (parseInt(status)) {
-                case 1: return '● 在线';
-                case 2: return '● 离线';
-                default: return '● 未绑定';
+            switch (parseInt(status, 10)) {
+                case 1:
+                    return '● 在线';
+                case 2:
+                    return '● 离线';
+                default:
+                    return '● 未绑定';
             }
         }
 
-        // 显示绑定模态框
         function showBindModal() {
             document.getElementById('bindModal').classList.add('show');
-            document.getElementById('deviceUid').value = '';
+            document.getElementById('deviceBindCode').value = '';
             document.getElementById('deviceName').value = '';
             document.getElementById('deviceDesc').value = '';
         }
 
-        // 隐藏绑定模态框
         function hideBindModal() {
             document.getElementById('bindModal').classList.remove('show');
         }
 
-        // 绑定设备
         async function bindDevice() {
-            const uid = document.getElementById('deviceUid').value.trim();
+            const bindCode = document.getElementById('deviceBindCode').value.trim();
             const name = document.getElementById('deviceName').value.trim();
-            const desc = document.getElementById('deviceDesc').value.trim();
-            
-            if (!uid) {
-                alert('请输入设备ID');
+            const description = document.getElementById('deviceDesc').value.trim();
+
+            if (!bindCode) {
+                alert('请输入动态绑定码');
                 return;
             }
-            
-            if (!/^[a-f0-9]{16}$/i.test(uid)) {
-                alert('设备ID格式不正确，应为16位十六进制字符（64位芯片ID）');
+
+            if (!/^\d{6}$/.test(bindCode)) {
+                alert('动态绑定码格式不正确，应为 6 位数字');
                 return;
             }
-            
+
             try {
                 const formData = new FormData();
-                formData.append('device_uid', uid);
+                formData.append('dyn_bound_code', bindCode);
                 formData.append('name', name);
-                formData.append('description', desc);
-                
+                formData.append('description', description);
+
                 const response = await fetch('backend/api/devices/bind.php', {
                     method: 'POST',
                     body: formData
                 });
-                
+
                 const result = await response.json();
-                
+
                 if (result.success) {
                     hideBindModal();
                     loadDevices();
-                } else {
-                    alert(result.message);
+                    return;
                 }
+
+                alert(result.message || '绑定失败');
             } catch (error) {
                 alert('绑定失败');
             }
         }
 
-        // 解绑设备
         async function unbindDevice(deviceId) {
-            if (!confirm('确定要解绑该设备吗？')) return;
-            
+            if (!confirm('确定要解绑该设备吗？')) {
+                return;
+            }
+
             try {
                 const formData = new FormData();
                 formData.append('device_id', deviceId);
-                
+
                 const response = await fetch('backend/api/devices/unbind.php', {
                     method: 'POST',
                     body: formData
                 });
-                
+
                 const result = await response.json();
-                
+
                 if (result.success) {
                     loadDevices();
-                } else {
-                    alert(result.message);
+                    return;
                 }
+
+                alert(result.message || '解绑失败');
             } catch (error) {
                 alert('解绑失败');
             }
         }
 
-        // 显示下发图片模态框
         async function showSendModal(deviceId) {
             currentDeviceId = deviceId;
-            selectedImageId = null;
             document.getElementById('sendModal').classList.add('show');
-            
-            // 加载相册列表
+            clearSendSelection();
+            resetRenderOptions();
             await loadAlbumsForSelect();
         }
 
-        // 隐藏下发图片模态框
         function hideSendModal() {
             document.getElementById('sendModal').classList.remove('show');
             currentDeviceId = null;
-            selectedImageId = null;
+            clearSendSelection();
+            resetRenderOptions();
         }
 
-        // 加载相册列表到选择器
+        function clearSendSelection() {
+            selectedImageId = null;
+            selectedImageData = null;
+            currentAlbumImages = [];
+            previewLoadToken += 1;
+            previewState.sourceImage = null;
+            previewState.cropRect = null;
+            previewState.orientedWidth = 0;
+            previewState.orientedHeight = 0;
+            document.getElementById('albumSelect').value = '';
+            document.getElementById('imageSelector').innerHTML = '<p class="selector-empty">请先选择相册。</p>';
+            renderPreview();
+        }
+
         async function loadAlbumsForSelect() {
             try {
                 const response = await fetch('backend/api/albums/list.php');
                 const result = await response.json();
-                
-                if (result.success) {
-                    albums = result.data.albums;
-                    const select = document.getElementById('albumSelect');
-                    select.innerHTML = '<option value="">请选择相册</option>' + 
-                        albums.map(a => `<option value="${a.id}">${a.name} (${a.image_count}张)</option>`).join('');
+
+                if (!result.success) {
+                    return;
+                }
+
+                albums = result.data.albums || [];
+                const select = document.getElementById('albumSelect');
+                select.innerHTML = '<option value="">请选择相册</option>' + albums
+                    .map((album) => `<option value="${Number(album.id)}">${escapeHtml(album.name)} (${Number(album.image_count)} 张)</option>`)
+                    .join('');
+
+                if (albums.length > 0) {
+                    select.value = albums[0].id;
+                    await loadAlbumImages();
                 }
             } catch (error) {
                 console.error('加载相册失败:', error);
             }
         }
 
-        // 加载相册图片
         async function loadAlbumImages() {
             const albumId = document.getElementById('albumSelect').value;
+
             if (!albumId) {
-                document.getElementById('imageSelector').innerHTML = '';
+                currentAlbumImages = [];
+                document.getElementById('imageSelector').innerHTML = '<p class="selector-empty">请选择相册。</p>';
+                selectedImageId = null;
+                selectedImageData = null;
+                previewState.sourceImage = null;
+                renderPreview();
                 return;
             }
-            
+
             try {
-                const response = await fetch(`backend/api/albums/images.php?album_id=${albumId}`);
+                const response = await fetch(`backend/api/albums/images.php?album_id=${encodeURIComponent(albumId)}`);
                 const result = await response.json();
-                
+
                 if (result.success) {
-                    renderImageSelector(result.data.images);
+                    currentAlbumImages = result.data.images || [];
+                    renderImageSelector(currentAlbumImages);
                 }
             } catch (error) {
                 console.error('加载图片失败:', error);
             }
         }
 
-        // 渲染图片选择器
         function renderImageSelector(images) {
             const container = document.getElementById('imageSelector');
-            
-            if (images.length === 0) {
-                container.innerHTML = '<p style="color: var(--text-muted);">该相册暂无图片</p>';
+
+            if (!images.length) {
+                container.innerHTML = '<p class="selector-empty">该相册还没有图片。</p>';
+                selectedImageId = null;
+                selectedImageData = null;
+                previewState.sourceImage = null;
+                renderPreview();
                 return;
             }
-            
-            container.innerHTML = images.map(image => `
-                <div class="selector-item" data-id="${image.id}" onclick="selectImage(this, ${image.id})">
-                    <img src="uploads/${image.file_path}" alt="${image.original_name}">
-                </div>
-            `).join('');
+
+            container.innerHTML = images.map((image) => {
+                const imagePath = `uploads/${image.file_path}`;
+                const caption = escapeHtml(image.original_name || image.file_path || `图片 ${image.id}`);
+                return `
+                    <button type="button" class="selector-item" data-id="${Number(image.id)}" onclick="selectImage(${Number(image.id)})">
+                        <img src="${imagePath}" alt="${caption}">
+                        <span class="selector-item-caption">${caption}</span>
+                    </button>
+                `;
+            }).join('');
+
+            selectImage(images[0].id);
         }
 
-        // 选择图片
-        function selectImage(element, imageId) {
-            document.querySelectorAll('.selector-item').forEach(el => el.classList.remove('selected'));
-            element.classList.add('selected');
+        async function selectImage(imageId) {
+            document.querySelectorAll('.selector-item').forEach((element) => {
+                element.classList.toggle('selected', String(element.dataset.id) === String(imageId));
+            });
+
             selectedImageId = imageId;
+            selectedImageData = currentAlbumImages.find((image) => String(image.id) === String(imageId)) || null;
+            await loadSelectedImagePreview();
         }
 
-        // 下发图片
-        async function sendImage() {
-            if (!selectedImageId) {
-                alert('请选择一张图片');
+        async function loadSelectedImagePreview() {
+            previewLoadToken += 1;
+            const token = previewLoadToken;
+
+            if (!selectedImageData) {
+                previewState.sourceImage = null;
+                renderPreview();
                 return;
             }
-            
+
+            const image = new Image();
+            image.onload = () => {
+                if (token !== previewLoadToken) {
+                    return;
+                }
+
+                previewState.sourceImage = image;
+                renderPreview();
+            };
+            image.onerror = () => {
+                if (token !== previewLoadToken) {
+                    return;
+                }
+
+                previewState.sourceImage = null;
+                renderPreview();
+            };
+            image.src = `uploads/${selectedImageData.file_path}`;
+        }
+
+        function setOrientation(orientation) {
+            renderOptions.orientation = orientation === 'portrait' ? 'portrait' : 'landscape';
+            syncRenderControls();
+            renderPreview();
+        }
+
+        function setRotate(rotate) {
+            renderOptions.rotate = Number(rotate) === 90 ? 90 : 0;
+            syncRenderControls();
+            renderPreview();
+        }
+
+        function updateCropZoom(value) {
+            renderOptions.cropZoom = clamp(parseFloat(value) || 1, 1, 4);
+            syncRenderControls();
+            renderPreview();
+        }
+
+        function syncRenderControls() {
+            document.getElementById('orientationLandscape').classList.toggle('active', renderOptions.orientation === 'landscape');
+            document.getElementById('orientationPortrait').classList.toggle('active', renderOptions.orientation === 'portrait');
+            document.getElementById('rotate0').classList.toggle('active', renderOptions.rotate === 0);
+            document.getElementById('rotate90').classList.toggle('active', renderOptions.rotate === 90);
+            document.getElementById('cropZoom').value = renderOptions.cropZoom.toFixed(2);
+            document.getElementById('cropZoomValue').textContent = `${renderOptions.cropZoom.toFixed(2)}x`;
+
+            const dimensions = getRenderDimensions();
+            document.getElementById('previewResolution').textContent = `输出尺寸：${dimensions.width} x ${dimensions.height}`;
+        }
+
+        function buildOrientedSourceCanvas() {
+            if (!previewState.sourceImage) {
+                return null;
+            }
+
+            const image = previewState.sourceImage;
+            const sourceWidth = image.naturalWidth || image.width;
+            const sourceHeight = image.naturalHeight || image.height;
+
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+
+            if (renderOptions.rotate === 90) {
+                canvas.width = sourceHeight;
+                canvas.height = sourceWidth;
+                context.translate(canvas.width / 2, canvas.height / 2);
+                context.rotate(Math.PI / 2);
+                context.drawImage(image, -sourceWidth / 2, -sourceHeight / 2);
+                return canvas;
+            }
+
+            canvas.width = sourceWidth;
+            canvas.height = sourceHeight;
+            context.drawImage(image, 0, 0);
+            return canvas;
+        }
+
+        function calculateCropRect(sourceWidth, sourceHeight, targetWidth, targetHeight) {
+            const targetAspect = targetWidth / targetHeight;
+            const sourceAspect = sourceWidth / sourceHeight;
+
+            let baseCropWidth;
+            let baseCropHeight;
+
+            if (sourceAspect > targetAspect) {
+                baseCropHeight = sourceHeight;
+                baseCropWidth = baseCropHeight * targetAspect;
+            } else {
+                baseCropWidth = sourceWidth;
+                baseCropHeight = baseCropWidth / targetAspect;
+            }
+
+            const cropWidth = Math.max(1, baseCropWidth / renderOptions.cropZoom);
+            const cropHeight = Math.max(1, baseCropHeight / renderOptions.cropZoom);
+
+            let left = renderOptions.cropCenterX * sourceWidth - cropWidth / 2;
+            let top = renderOptions.cropCenterY * sourceHeight - cropHeight / 2;
+
+            left = clamp(left, 0, Math.max(0, sourceWidth - cropWidth));
+            top = clamp(top, 0, Math.max(0, sourceHeight - cropHeight));
+
+            return {
+                left,
+                top,
+                width: cropWidth,
+                height: cropHeight
+            };
+        }
+
+        function renderPreview() {
+            syncRenderControls();
+
+            const canvas = document.getElementById('renderPreviewCanvas');
+            const placeholder = document.getElementById('previewPlaceholder');
+            const context = canvas.getContext('2d');
+            const dimensions = getRenderDimensions();
+
+            canvas.width = dimensions.width;
+            canvas.height = dimensions.height;
+
+            if (!previewState.sourceImage) {
+                context.clearRect(0, 0, canvas.width, canvas.height);
+                placeholder.style.display = 'flex';
+                document.getElementById('previewSelectedName').textContent = '尚未选择图片';
+                return;
+            }
+
+            const sourceCanvas = buildOrientedSourceCanvas();
+            if (!sourceCanvas) {
+                context.clearRect(0, 0, canvas.width, canvas.height);
+                placeholder.style.display = 'flex';
+                return;
+            }
+
+            placeholder.style.display = 'none';
+
+            const cropRect = calculateCropRect(
+                sourceCanvas.width,
+                sourceCanvas.height,
+                dimensions.width,
+                dimensions.height
+            );
+
+            previewState.cropRect = cropRect;
+            previewState.orientedWidth = sourceCanvas.width;
+            previewState.orientedHeight = sourceCanvas.height;
+
+            context.clearRect(0, 0, canvas.width, canvas.height);
+            context.drawImage(
+                sourceCanvas,
+                cropRect.left,
+                cropRect.top,
+                cropRect.width,
+                cropRect.height,
+                0,
+                0,
+                dimensions.width,
+                dimensions.height
+            );
+
+            context.strokeStyle = 'rgba(255, 255, 255, 0.92)';
+            context.lineWidth = Math.max(2, Math.round(dimensions.width / 240));
+            context.strokeRect(
+                context.lineWidth / 2,
+                context.lineWidth / 2,
+                dimensions.width - context.lineWidth,
+                dimensions.height - context.lineWidth
+            );
+
+            document.getElementById('previewSelectedName').textContent = selectedImageData
+                ? `当前图片：${selectedImageData.original_name || selectedImageData.file_path}`
+                : '尚未选择图片';
+        }
+
+        function startPreviewDrag(event) {
+            if (!previewState.sourceImage || !previewState.cropRect) {
+                return;
+            }
+
+            const stage = document.getElementById('previewStage');
+            activePointerId = event.pointerId;
+            previewDragState = {
+                startX: event.clientX,
+                startY: event.clientY,
+                centerX: renderOptions.cropCenterX,
+                centerY: renderOptions.cropCenterY
+            };
+
+            stage.setPointerCapture(event.pointerId);
+            stage.classList.add('is-dragging');
+            event.preventDefault();
+        }
+
+        function movePreviewDrag(event) {
+            if (event.pointerId !== activePointerId || !previewDragState || !previewState.cropRect) {
+                return;
+            }
+
+            const stage = document.getElementById('previewStage');
+            const rect = stage.getBoundingClientRect();
+            const deltaX = event.clientX - previewDragState.startX;
+            const deltaY = event.clientY - previewDragState.startY;
+
+            const normalizedDeltaX = (deltaX / Math.max(rect.width, 1)) * (previewState.cropRect.width / previewState.orientedWidth);
+            const normalizedDeltaY = (deltaY / Math.max(rect.height, 1)) * (previewState.cropRect.height / previewState.orientedHeight);
+
+            renderOptions.cropCenterX = clamp(previewDragState.centerX - normalizedDeltaX, 0, 1);
+            renderOptions.cropCenterY = clamp(previewDragState.centerY - normalizedDeltaY, 0, 1);
+
+            renderPreview();
+            event.preventDefault();
+        }
+
+        function endPreviewDrag(event) {
+            if (event.pointerId !== activePointerId) {
+                return;
+            }
+
+            const stage = document.getElementById('previewStage');
+            activePointerId = null;
+            previewDragState = null;
+            stage.classList.remove('is-dragging');
+
+            try {
+                stage.releasePointerCapture(event.pointerId);
+            } catch (error) {
+                // 忽略已释放的 capture
+            }
+        }
+
+        function initPreviewInteractions() {
+            const stage = document.getElementById('previewStage');
+            stage.addEventListener('pointerdown', startPreviewDrag);
+            stage.addEventListener('pointermove', movePreviewDrag);
+            stage.addEventListener('pointerup', endPreviewDrag);
+            stage.addEventListener('pointercancel', endPreviewDrag);
+        }
+
+        async function sendImage() {
+            if (!currentDeviceId) {
+                alert('当前设备上下文无效，请重新打开弹窗');
+                return;
+            }
+
+            if (!selectedImageId) {
+                alert('请先选择一张图片');
+                return;
+            }
+
             try {
                 const formData = new FormData();
                 formData.append('device_id', currentDeviceId);
                 formData.append('image_id', selectedImageId);
-                
+                formData.append('orientation', renderOptions.orientation);
+                formData.append('rotate', String(renderOptions.rotate));
+                formData.append('crop_center_x', renderOptions.cropCenterX.toFixed(6));
+                formData.append('crop_center_y', renderOptions.cropCenterY.toFixed(6));
+                formData.append('crop_zoom', renderOptions.cropZoom.toFixed(4));
+
                 const response = await fetch('backend/api/devices/send-image.php', {
                     method: 'POST',
                     body: formData
                 });
-                
+
                 const result = await response.json();
-                
+
                 if (result.success) {
-                    alert('图片下发成功！');
+                    alert('图片下发成功');
                     hideSendModal();
                     loadDevices();
-                } else {
-                    alert(result.message);
+                    return;
                 }
+
+                alert(result.message || '图片下发失败');
             } catch (error) {
-                alert('下发失败');
+                alert('图片下发失败');
             }
         }
 
-        // 退出登录
         async function logout() {
             await fetch('backend/api/auth/logout.php');
             window.location.href = 'index.html';
         }
 
-        // 页面加载
-        checkAuth();
-        loadDevices();
+        document.addEventListener('DOMContentLoaded', async () => {
+            initPreviewInteractions();
+            renderPreview();
+            await checkAuth();
+            await loadDevices();
+        });
     </script>
 </body>
 </html>

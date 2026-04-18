@@ -35,7 +35,8 @@ try {
     $stmt = $db->prepare("
         UPDATE devices 
         SET user_id = NULL, name = NULL, description = NULL, status = 0, 
-            bound_at = NULL, current_image_id = NULL 
+            bound_at = NULL, current_image_id = NULL,
+            dyn_bound_code = NULL, dyn_bound_code_issued_at = NULL, dyn_bound_code_expires_at = NULL
         WHERE id = ?
     ");
     $stmt->execute([$deviceId]);
