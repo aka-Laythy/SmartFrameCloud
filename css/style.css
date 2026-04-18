@@ -466,6 +466,9 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: 12px;
+    padding: 16px;
+    flex-wrap: wrap;
     opacity: 0;
     transition: var(--transition);
 }
