@@ -266,6 +266,7 @@
                     <img src="uploads/${image.file_path}" alt="${image.original_name}">
                     <div class="image-overlay">
                         <button class="btn btn-sm btn-danger" onclick="deleteImage(${image.id})">删除</button>
+                        <button class="btn btn-sm btn-success" onclick="setCover(${image.id})">设为封面</button>
                     </div>
                 </div>
             `).join('');
@@ -307,6 +308,34 @@
             
             // TODO: 实现删除图片API
             alert('功能开发中');
+        }
+
+        // 设置封面
+        async function setCover(imageId) {
+            if (!confirm('确定要将这张图片设为相册封面吗？')) return;
+            
+            try {
+                const formData = new FormData();
+                formData.append('album_id', currentAlbumId);
+                formData.append('image_id', imageId);
+                
+                const response = await fetch('backend/api/albums/set-cover.php', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('封面设置成功！');
+                    loadImages(currentAlbumId);
+                    loadAlbums();
+                } else {
+                    alert(result.message);
+                }
+            } catch (error) {
+                alert('设置失败');
+            }
         }
 
         // 退出登录
