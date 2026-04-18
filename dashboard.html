@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>控制台 - 智能相册云平台</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <a href="dashboard.html" class="navbar-brand">智能相册云平台</a>
+            <div class="navbar-nav">
+                <a href="dashboard.html" class="nav-link active">控制台</a>
+                <a href="albums.html" class="nav-link">相册</a>
+                <a href="devices.html" class="nav-link">设备</a>
+                <a href="#" class="nav-link" onclick="logout()">退出</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container" style="padding-top: 30px;">
+        <div class="page-header">
+            <h2>欢迎回来，<span id="username">用户</span></h2>
+        </div>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="albumCount">0</div>
+                <div class="stat-label">相册数量</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="imageCount">0</div>
+                <div class="stat-label">图片数量</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="deviceCount">0</div>
+                <div class="stat-label">绑定设备</div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">快速操作</h3>
+            </div>
+            <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+                <a href="albums.html" class="btn btn-primary">
+                    <span>📁</span> 管理相册
+                </a>
+                <a href="devices.html" class="btn btn-secondary">
+                    <span>📱</span> 管理设备
+                </a>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">使用说明</h3>
+            </div>
+            <div style="line-height: 2;">
+                <p><strong>1. 创建相册</strong> - 在相册页面创建新的相册来组织您的图片</p>
+                <p><strong>2. 上传图片</strong> - 选择相册并上传您的图片到云端</p>
+                <p><strong>3. 绑定设备</strong> - 在设备页面绑定您的智能相册设备</p>
+                <p><strong>4. 下发图片</strong> - 选择设备并将图片下发到设备显示</p>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // 检查登录状态
+        async function checkAuth() {
+            try {
+                const response = await fetch('backend/api/user/profile.php');
+                const result = await response.json();
+                
+                if (!result.success) {
+                    window.location.href = 'index.html';
+                    return null;
+                }
+                
+                return result.data;
+            } catch (error) {
+                window.location.href = 'index.html';
+                return null;
+            }
+        }
+        
+        // 加载用户数据
+        async function loadUserData() {
+            const data = await checkAuth();
+            if (!data) return;
+            
+            document.getElementById('username').textContent = data.user.username;
+            document.getElementById('albumCount').textContent = data.stats.album_count;
+            document.getElementById('imageCount').textContent = data.stats.image_count;
+            document.getElementById('deviceCount').textContent = data.stats.device_count;
+        }
+        
+        // 退出登录
+        async function logout() {
+            try {
+                await fetch('backend/api/auth/logout.php');
+                window.location.href = 'index.html';
+            } catch (error) {
+                alert('退出失败');
+            }
+        }
+        
+        // 页面加载
+        loadUserData();
+    </script>
+</body>
+</html>

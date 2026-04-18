@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>注册 - 智能相册云平台</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="auth-page">
+        <div class="auth-box">
+            <div class="auth-header">
+                <h1>智能相册云平台</h1>
+                <p>创建新账号</p>
+            </div>
+            
+            <div class="alert alert-error" id="alert"></div>
+            
+            <form id="registerForm">
+                <div class="form-group">
+                    <label class="form-label">用户名</label>
+                    <input type="text" class="form-input" name="username" placeholder="3-32位字母、数字或下划线" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">邮箱</label>
+                    <input type="email" class="form-input" name="email" placeholder="请输入邮箱地址" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">密码</label>
+                    <input type="password" class="form-input" name="password" placeholder="至少6位字符" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">确认密码</label>
+                    <input type="password" class="form-input" name="confirm_password" placeholder="请再次输入密码" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">验证码</label>
+                    <div class="captcha-group">
+                        <input type="text" class="form-input" name="captcha" placeholder="请输入验证码" maxlength="4" required>
+                        <img src="backend/api/auth/captcha.php" alt="验证码" class="captcha-img" id="captchaImg" title="点击刷新">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="agreeTos" name="agree_tos" required>
+                        <label for="agreeTos">我已阅读并同意<a href="#" target="_blank">服务条款</a></label>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary" style="width: 100%;" id="submitBtn">
+                    注册
+                </button>
+            </form>
+            
+            <div class="auth-footer">
+                已有账号？<a href="index.html">立即登录</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 刷新验证码
+        function refreshCaptcha() {
+            document.getElementById('captchaImg').src = 'backend/api/auth/captcha.php?' + Date.now();
+        }
+        
+        document.getElementById('captchaImg').addEventListener('click', refreshCaptcha);
+        
+        // 显示提示
+        function showAlert(message, type = 'error') {
+            const alert = document.getElementById('alert');
+            alert.textContent = message;
+            alert.className = 'alert alert-' + type + ' show';
+            setTimeout(() => {
+                alert.classList.remove('show');
+            }, 5000);
+        }
+        
+        // 注册表单提交
+        document.getElementById('registerForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            // 验证密码
+            const password = this.password.value;
+            const confirmPassword = this.confirm_password.value;
+            
+            if (password !== confirmPassword) {
+                showAlert('两次输入的密码不一致');
+                return;
+            }
+            
+            if (password.length < 6) {
+                showAlert('密码长度至少6位');
+                return;
+            }
+            
+            // 验证用户名
+            const username = this.username.value;
+            if (!/^[a-zA-Z0-9_]{3,32}$/.test(username)) {
+                showAlert('用户名只能包含字母、数字和下划线，长度3-32位');
+                return;
+            }
+            
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner"></span> 注册中...';
+            
+            const formData = new FormData(this);
+            
+            try {
+                const response = await fetch('backend/api/auth/register.php', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showAlert('注册成功，正在跳转...', 'success');
+                    setTimeout(() => {
+                        window.location.href = 'index.html';
+                    }, 1000);
+                } else {
+                    showAlert(result.message);
+                    refreshCaptcha();
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = '注册';
+                }
+            } catch (error) {
+                showAlert('网络错误，请稍后重试');
+                refreshCaptcha();
+                submitBtn.disabled = false;
+                submitBtn.textContent = '注册';
+            }
+        });
+    </script>
+</body>
+</html>

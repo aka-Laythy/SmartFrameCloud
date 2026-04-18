@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>相册管理 - 智能相册云平台</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <a href="dashboard.html" class="navbar-brand">智能相册云平台</a>
+            <div class="navbar-nav">
+                <a href="dashboard.html" class="nav-link">控制台</a>
+                <a href="albums.html" class="nav-link active">相册</a>
+                <a href="devices.html" class="nav-link">设备</a>
+                <a href="#" class="nav-link" onclick="logout()">退出</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container" style="padding-top: 30px;">
+        <div class="page-header">
+            <h2>相册管理</h2>
+            <button class="btn btn-primary" onclick="showCreateModal()">
+                <span>+</span> 新建相册
+            </button>
+        </div>
+        
+        <div id="albumsContainer" class="albums-grid">
+            <!-- 相册列表将在这里渲染 -->
+        </div>
+    </main>
+
+    <!-- 创建相册模态框 -->
+    <div class="modal" id="createModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>新建相册</h3>
+                <button class="modal-close" onclick="hideCreateModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">相册名称</label>
+                    <input type="text" class="form-input" id="albumName" placeholder="请输入相册名称">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">相册描述</label>
+                    <input type="text" class="form-input" id="albumDesc" placeholder="可选">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="hideCreateModal()">取消</button>
+                <button class="btn btn-primary" onclick="createAlbum()">创建</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 相册详情模态框 -->
+    <div class="modal" id="albumModal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3 id="albumTitle">相册详情</h3>
+                <button class="modal-close" onclick="hideAlbumModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 20px;">
+                    <input type="file" id="uploadInput" accept="image/*" style="display: none;" onchange="uploadImage(this)">
+                    <button class="btn btn-primary" onclick="document.getElementById('uploadInput').click()">
+                        <span>+</span> 上传图片
+                    </button>
+                </div>
+                <div id="imagesContainer" class="images-grid">
+                    <!-- 图片列表将在这里渲染 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentAlbumId = null;
+        let albums = [];
+
+        // 检查登录
+        async function checkAuth() {
+            try {
+                const response = await fetch('backend/api/user/profile.php');
+                const result = await response.json();
+                if (!result.success) {
+                    window.location.href = 'index.html';
+                }
+            } catch (error) {
+                window.location.href = 'index.html';
+            }
+        }
+
+        // 加载相册列表
+        async function loadAlbums() {
+            try {
+                const response = await fetch('backend/api/albums/list.php');
+                const result = await response.json();
+                
+                if (result.success) {
+                    albums = result.data.albums;
+                    renderAlbums();
+                }
+            } catch (error) {
+                console.error('加载相册失败:', error);
+            }
+        }
+
+        // 渲染相册列表
+        function renderAlbums() {
+            const container = document.getElementById('albumsContainer');
+            
+            if (albums.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state" style="grid-column: 1/-1;">
+                        <div class="empty-state-icon">📁</div>
+                        <h3>暂无相册</h3>
+                        <p>点击上方按钮创建您的第一个相册</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = albums.map(album => `
+                <div class="album-card" onclick="showAlbumDetail(${album.id})">
+                    <div class="album-cover">
+                        ${album.cover_image ? 
+                            `<img src="uploads/${album.cover_image}" alt="${album.name}">` : 
+                            '<span>📷</span>'
+                        }
+                    </div>
+                    <div class="album-info">
+                        <div class="album-name">${album.name}</div>
+                        <div class="album-meta">${album.image_count} 张图片 · ${album.description || '无描述'}</div>
+                    </div>
+                    <div class="album-actions" onclick="event.stopPropagation()">
+                        <button class="btn btn-sm btn-outline" onclick="showAlbumDetail(${album.id})">查看</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteAlbum(${album.id}, '${album.name}')">删除</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 显示创建模态框
+        function showCreateModal() {
+            document.getElementById('createModal').classList.add('show');
+            document.getElementById('albumName').value = '';
+            document.getElementById('albumDesc').value = '';
+        }
+
+        // 隐藏创建模态框
+        function hideCreateModal() {
+            document.getElementById('createModal').classList.remove('show');
+        }
+
+        // 创建相册
+        async function createAlbum() {
+            const name = document.getElementById('albumName').value.trim();
+            const description = document.getElementById('albumDesc').value.trim();
+            
+            if (!name) {
+                alert('请输入相册名称');
+                return;
+            }
+            
+            try {
+                const formData = new FormData();
+                formData.append('name', name);
+                formData.append('description', description);
+                
+                const response = await fetch('backend/api/albums/create.php', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    hideCreateModal();
+                    loadAlbums();
+                } else {
+                    alert(result.message);
+                }
+            } catch (error) {
+                alert('创建失败');
+            }
+        }
+
+        // 删除相册
+        async function deleteAlbum(id, name) {
+            if (!confirm(`确定要删除相册 "${name}" 吗？相册中的所有图片也将被删除。`)) {
+                return;
+            }
+            
+            try {
+                const formData = new FormData();
+                formData.append('album_id', id);
+                
+                const response = await fetch('backend/api/albums/delete.php', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    loadAlbums();
+                } else {
+                    alert(result.message);
+                }
+            } catch (error) {
+                alert('删除失败');
+            }
+        }
+
+        // 显示相册详情
+        async function showAlbumDetail(albumId) {
+            currentAlbumId = albumId;
+            const album = albums.find(a => a.id === albumId);
+            document.getElementById('albumTitle').textContent = album ? album.name : '相册详情';
+            
+            await loadImages(albumId);
+            document.getElementById('albumModal').classList.add('show');
+        }
+
+        // 隐藏相册详情
+        function hideAlbumModal() {
+            document.getElementById('albumModal').classList.remove('show');
+            currentAlbumId = null;
+        }
+
+        // 加载图片列表
+        async function loadImages(albumId) {
+            try {
+                const response = await fetch(`backend/api/albums/images.php?album_id=${albumId}`);
+                const result = await response.json();
+                
+                if (result.success) {
+                    renderImages(result.data.images);
+                }
+            } catch (error) {
+                console.error('加载图片失败:', error);
+            }
+        }
+
+        // 渲染图片列表
+        function renderImages(images) {
+            const container = document.getElementById('imagesContainer');
+            
+            if (images.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state" style="grid-column: 1/-1;">
+                        <div class="empty-state-icon">🖼️</div>
+                        <h3>暂无图片</h3>
+                        <p>点击上方按钮上传图片</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = images.map(image => `
+                <div class="image-item">
+                    <img src="uploads/${image.file_path}" alt="${image.original_name}">
+                    <div class="image-overlay">
+                        <button class="btn btn-sm btn-danger" onclick="deleteImage(${image.id})">删除</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 上传图片
+        async function uploadImage(input) {
+            if (!input.files || input.files.length === 0) return;
+            
+            const file = input.files[0];
+            const formData = new FormData();
+            formData.append('album_id', currentAlbumId);
+            formData.append('image', file);
+            
+            try {
+                const response = await fetch('backend/api/upload/upload.php', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    loadImages(currentAlbumId);
+                    loadAlbums();
+                } else {
+                    alert(result.message);
+                }
+            } catch (error) {
+                alert('上传失败');
+            }
+            
+            input.value = '';
+        }
+
+        // 删除图片
+        async function deleteImage(imageId) {
+            if (!confirm('确定要删除这张图片吗？')) return;
+            
+            // TODO: 实现删除图片API
+            alert('功能开发中');
+        }
+
+        // 退出登录
+        async function logout() {
+            await fetch('backend/api/auth/logout.php');
+            window.location.href = 'index.html';
+        }
+
+        // 页面加载
+        checkAuth();
+        loadAlbums();
+    </script>
+</body>
+</html>
