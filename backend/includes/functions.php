@@ -123,7 +123,8 @@ function normalizeBmpRenderOptions(array $options = []) {
     $orientation = ($options['orientation'] ?? 'landscape') === 'portrait' ? 'portrait' : 'landscape';
 
     $rotate = intval($options['rotate'] ?? 0);
-    if ($rotate !== 90) {
+    $rotate = (($rotate % 360) + 360) % 360;
+    if (!in_array($rotate, [0, 90, 180, 270], true)) {
         $rotate = 0;
     }
 
@@ -133,7 +134,7 @@ function normalizeBmpRenderOptions(array $options = []) {
 
     $cropCenterX = max(0.0, min(1.0, $cropCenterX));
     $cropCenterY = max(0.0, min(1.0, $cropCenterY));
-    $cropZoom = max(1.0, min(4.0, $cropZoom));
+    $cropZoom = max(0.5, min(4.0, $cropZoom));
 
     return [
         'orientation' => $orientation,
