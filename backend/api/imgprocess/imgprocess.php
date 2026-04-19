@@ -140,7 +140,8 @@ function normalizeBmpOptions($options = []) {
     $orientation = ($options['orientation'] ?? 'landscape') === 'portrait' ? 'portrait' : 'landscape';
 
     $rotate = intval($options['rotate'] ?? 0);
-    if ($rotate !== 90) {
+    $rotate = (($rotate % 360) + 360) % 360;
+    if (!in_array($rotate, [0, 90, 180, 270], true)) {
         $rotate = 0;
     }
 
@@ -153,7 +154,7 @@ function normalizeBmpOptions($options = []) {
         'rotate' => $rotate,
         'crop_center_x' => max(0.0, min(1.0, $cropCenterX)),
         'crop_center_y' => max(0.0, min(1.0, $cropCenterY)),
-        'crop_zoom' => max(1.0, min(4.0, $cropZoom)),
+        'crop_zoom' => max(0.5, min(4.0, $cropZoom)),
         'target_width' => $orientation === 'portrait' ? 480 : 800,
         'target_height' => $orientation === 'portrait' ? 800 : 480
     );
@@ -190,14 +191,14 @@ function load_source_image($input, $imageType) {
 }
 
 function create_oriented_source($src, $rotate) {
-    if ($rotate === 90) {
-        $rotated = @imagerotate($src, -90, 0);
+    if (in_array($rotate, [90, 180, 270], true)) {
+        $rotated = @imagerotate($src, -$rotate, 0);
         if ($rotated !== false) {
             imagedestroy($src);
             return $rotated;
         }
 
-        error_log('create_oriented_source failed when rotate=90');
+        error_log('create_oriented_source failed when rotate=' . $rotate);
     }
 
     return $src;
@@ -221,32 +222,62 @@ function calculate_crop_rect($srcWidth, $srcHeight, $targetWidth, $targetHeight,
     $centerPixelX = $centerX * $srcWidth;
     $centerPixelY = $centerY * $srcHeight;
 
-    $halfCropWidth = $cropWidth / 2;
-    $halfCropHeight = $cropHeight / 2;
+    $left = $centerPixelX - ($cropWidth / 2);
+    $top = $centerPixelY - ($cropHeight / 2);
 
-    $minCenterX = $halfCropWidth;
-    $maxCenterX = $srcWidth - $halfCropWidth;
-    $minCenterY = $halfCropHeight;
-    $maxCenterY = $srcHeight - $halfCropHeight;
-
-    if ($maxCenterX < $minCenterX) {
-        $centerPixelX = $srcWidth / 2;
-    } else {
-        $centerPixelX = min(max($centerPixelX, $minCenterX), $maxCenterX);
+    if ($cropWidth <= $srcWidth) {
+        $left = min(max($left, 0.0), $srcWidth - $cropWidth);
     }
 
-    if ($maxCenterY < $minCenterY) {
-        $centerPixelY = $srcHeight / 2;
-    } else {
-        $centerPixelY = min(max($centerPixelY, $minCenterY), $maxCenterY);
+    if ($cropHeight <= $srcHeight) {
+        $top = min(max($top, 0.0), $srcHeight - $cropHeight);
     }
 
     return [
-        'x' => (int) round($centerPixelX - $halfCropWidth),
-        'y' => (int) round($centerPixelY - $halfCropHeight),
-        'width' => (int) round($cropWidth),
-        'height' => (int) round($cropHeight)
+        'x' => $left,
+        'y' => $top,
+        'width' => $cropWidth,
+        'height' => $cropHeight
     ];
+}
+
+function draw_viewport_resampled($dst, $src, array $viewportRect, int $targetWidth, int $targetHeight): void
+{
+    $srcWidth = imagesx($src);
+    $srcHeight = imagesy($src);
+
+    $white = imagecolorallocate($dst, 255, 255, 255);
+    imagefilledrectangle($dst, 0, 0, $targetWidth, $targetHeight, $white);
+
+    $visibleLeft = max(0.0, $viewportRect['x']);
+    $visibleTop = max(0.0, $viewportRect['y']);
+    $visibleRight = min((float) $srcWidth, $viewportRect['x'] + $viewportRect['width']);
+    $visibleBottom = min((float) $srcHeight, $viewportRect['y'] + $viewportRect['height']);
+
+    if ($visibleRight <= $visibleLeft || $visibleBottom <= $visibleTop) {
+        return;
+    }
+
+    $visibleWidth = $visibleRight - $visibleLeft;
+    $visibleHeight = $visibleBottom - $visibleTop;
+
+    $destX = (($visibleLeft - $viewportRect['x']) / $viewportRect['width']) * $targetWidth;
+    $destY = (($visibleTop - $viewportRect['y']) / $viewportRect['height']) * $targetHeight;
+    $destWidth = ($visibleWidth / $viewportRect['width']) * $targetWidth;
+    $destHeight = ($visibleHeight / $viewportRect['height']) * $targetHeight;
+
+    imagecopyresampled(
+        $dst,
+        $src,
+        (int) round($destX),
+        (int) round($destY),
+        (int) round($visibleLeft),
+        (int) round($visibleTop),
+        max(1, (int) round($destWidth)),
+        max(1, (int) round($destHeight)),
+        max(1, (int) round($visibleWidth)),
+        max(1, (int) round($visibleHeight))
+    );
 }
 
 /**
@@ -281,18 +312,7 @@ function generate_bmp($input, $output, $options) {
         $options['crop_center_y']
     );
 
-    imagecopyresampled(
-        $dst,
-        $src,
-        0,
-        0,
-        $cropRect['x'],
-        $cropRect['y'],
-        $targetWidth,
-        $targetHeight,
-        $cropRect['width'],
-        $cropRect['height']
-    );
+    draw_viewport_resampled($dst, $src, $cropRect, $targetWidth, $targetHeight);
     imagedestroy($src);
 
     apply_ordered_dither($dst, $targetWidth, $targetHeight);

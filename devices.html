@@ -71,11 +71,9 @@
                     <div class="send-sidebar">
                         <div class="send-sidebar-card">
                             <div class="send-section-head">
-                                <h4>图片来源</h4>
-                                <p>先选相册，再选一张要生成 BMP 的原图。</p>
+                                <h4>选择相册</h4>
                             </div>
                             <div class="form-group">
-                                <label class="form-label">选择相册</label>
                                 <select class="form-input" id="albumSelect" onchange="loadAlbumImages()">
                                     <option value="">请选择相册</option>
                                 </select>
@@ -89,42 +87,28 @@
                     <div class="send-preview-panel">
                         <div class="send-preview-header">
                             <div>
-                                <h4>BMP 下发预览</h4>
-                                <p>软旋转、兴趣区和软裁剪只影响本次生成的 BMP，不会修改 `uploads/` 中的原图。</p>
+                                <h4>图片调整</h4>
                             </div>
                             <button type="button" class="btn btn-sm btn-outline render-reset-btn" onclick="resetRenderOptions()">重置调整</button>
                         </div>
 
                         <div class="render-toolbar">
-                            <div class="render-group">
-                                <div class="render-group-head">
-                                    <span class="render-label">墨水屏方向</span>
-                                    <span class="render-helper">固定输出尺寸</span>
+                            <div class="render-toolbar-card">
+                                <div class="render-control render-control-button">
+                                    <button type="button" class="toggle-btn render-action-btn active" id="orientationToggle" onclick="toggleOrientation()">横屏</button>
                                 </div>
-                                <div class="toggle-group">
-                                    <button type="button" class="toggle-btn active" id="orientationLandscape" onclick="setOrientation('landscape')">横屏 800 x 480</button>
-                                    <button type="button" class="toggle-btn" id="orientationPortrait" onclick="setOrientation('portrait')">竖屏 480 x 800</button>
-                                </div>
-                            </div>
 
-                            <div class="render-group">
-                                <div class="render-group-head">
-                                    <span class="render-label">软旋转</span>
-                                    <span class="render-helper">不改原图</span>
+                                <div class="render-control render-control-button">
+                                    <button type="button" class="toggle-btn render-action-btn active" id="rotateStepButton" onclick="rotateClockwise()">顺时针转90°</button>
                                 </div>
-                                <div class="toggle-group">
-                                    <button type="button" class="toggle-btn active" id="rotate0" onclick="setRotate(0)">保持原方向</button>
-                                    <button type="button" class="toggle-btn" id="rotate90" onclick="setRotate(90)">顺时针 90°</button>
-                                </div>
-                            </div>
 
-                            <div class="render-group">
-                                <div class="render-group-head render-zoom-head">
-                                    <span class="render-label">软裁剪</span>
-                                    <span class="render-value" id="cropZoomValue">1.00x</span>
+                                <div class="render-control render-control-slider">
+                                    <div class="render-control-top">
+                                        <span class="render-control-title">裁剪</span>
+                                        <span class="render-value" id="cropZoomValue">1.00x</span>
+                                    </div>
+                                    <input type="range" class="render-range" id="cropZoom" min="0.5" max="4" step="0.05" value="1" oninput="updateCropZoom(this.value)">
                                 </div>
-                                <input type="range" class="render-range" id="cropZoom" min="1" max="4" step="0.05" value="1" oninput="updateCropZoom(this.value)">
-                                <small class="render-helper-block">固定输出为当前屏幕尺寸；缩放越大，保留区域越小。</small>
                             </div>
                         </div>
 
@@ -133,12 +117,6 @@
                             <div id="previewPlaceholder" class="preview-placeholder">先从左侧选择一张图片，然后拖动预览来调整“兴趣区”。</div>
                         </div>
 
-                        <div class="preview-meta">
-                            <span id="previewResolution">输出尺寸：800 x 480</span>
-                            <span id="previewSelectedName">尚未选择图片</span>
-                        </div>
-
-                        <p class="preview-tip">操作说明：方向决定固定输出尺寸，软旋转只调整 BMP 生成方向，拖动预览可以移动兴趣区，软裁剪始终按横屏 800 x 480 或竖屏 480 x 800 固定输出。</p>
                     </div>
                 </div>
             </div>
@@ -303,11 +281,39 @@
             }
         }
 
+        function getSuggestedDeviceLabel() {
+            const usedNumbers = new Set();
+
+            devices.forEach((device) => {
+                const match = String(device.name || '').match(/^我的相框-(\d+)号$/);
+                if (match) {
+                    usedNumbers.add(Number(match[1]));
+                }
+            });
+
+            let nextNumber = 1;
+            while (usedNumbers.has(nextNumber)) {
+                nextNumber += 1;
+            }
+
+            return `我的相框-${nextNumber}号`;
+        }
+
+        function applyBindFormDefaults() {
+            const suggestedLabel = getSuggestedDeviceLabel();
+            const nameInput = document.getElementById('deviceName');
+            const descInput = document.getElementById('deviceDesc');
+
+            nameInput.value = suggestedLabel;
+            descInput.value = suggestedLabel;
+            nameInput.placeholder = suggestedLabel;
+            descInput.placeholder = suggestedLabel;
+        }
+
         function showBindModal() {
             document.getElementById('bindModal').classList.add('show');
             document.getElementById('deviceBindCode').value = '';
-            document.getElementById('deviceName').value = '';
-            document.getElementById('deviceDesc').value = '';
+            applyBindFormDefaults();
         }
 
         function hideBindModal() {
@@ -316,8 +322,9 @@
 
         async function bindDevice() {
             const bindCode = document.getElementById('deviceBindCode').value.trim();
-            const name = document.getElementById('deviceName').value.trim();
-            const description = document.getElementById('deviceDesc').value.trim();
+            const suggestedLabel = getSuggestedDeviceLabel();
+            const name = document.getElementById('deviceName').value.trim() || suggestedLabel;
+            const description = document.getElementById('deviceDesc').value.trim() || suggestedLabel;
 
             if (!bindCode) {
                 alert('请输入动态绑定码');
@@ -526,34 +533,33 @@
             image.src = `uploads/${selectedImageData.file_path}`;
         }
 
-        function setOrientation(orientation) {
-            renderOptions.orientation = orientation === 'portrait' ? 'portrait' : 'landscape';
+        function toggleOrientation() {
+            renderOptions.orientation = renderOptions.orientation === 'portrait' ? 'landscape' : 'portrait';
             syncRenderControls();
             renderPreview();
         }
 
         function setRotate(rotate) {
-            renderOptions.rotate = Number(rotate) === 90 ? 90 : 0;
+            const normalizedRotate = Number(rotate) || 0;
+            renderOptions.rotate = ((normalizedRotate % 360) + 360) % 360;
             syncRenderControls();
             renderPreview();
         }
 
+        function rotateClockwise() {
+            setRotate(renderOptions.rotate + 90);
+        }
+
         function updateCropZoom(value) {
-            renderOptions.cropZoom = clamp(parseFloat(value) || 1, 1, 4);
+            renderOptions.cropZoom = clamp(parseFloat(value) || 1, 0.5, 4);
             syncRenderControls();
             renderPreview();
         }
 
         function syncRenderControls() {
-            document.getElementById('orientationLandscape').classList.toggle('active', renderOptions.orientation === 'landscape');
-            document.getElementById('orientationPortrait').classList.toggle('active', renderOptions.orientation === 'portrait');
-            document.getElementById('rotate0').classList.toggle('active', renderOptions.rotate === 0);
-            document.getElementById('rotate90').classList.toggle('active', renderOptions.rotate === 90);
+            document.getElementById('orientationToggle').textContent = renderOptions.orientation === 'portrait' ? '竖屏' : '横屏';
             document.getElementById('cropZoom').value = renderOptions.cropZoom.toFixed(2);
             document.getElementById('cropZoomValue').textContent = `${renderOptions.cropZoom.toFixed(2)}x`;
-
-            const dimensions = getRenderDimensions();
-            document.getElementById('previewResolution').textContent = `输出尺寸：${dimensions.width} x ${dimensions.height}`;
         }
 
         function buildOrientedSourceCanvas() {
@@ -567,19 +573,19 @@
 
             const canvas = document.createElement('canvas');
             const context = canvas.getContext('2d');
+            const rotate = ((renderOptions.rotate % 360) + 360) % 360;
 
-            if (renderOptions.rotate === 90) {
+            if (rotate === 90 || rotate === 270) {
                 canvas.width = sourceHeight;
                 canvas.height = sourceWidth;
-                context.translate(canvas.width / 2, canvas.height / 2);
-                context.rotate(Math.PI / 2);
-                context.drawImage(image, -sourceWidth / 2, -sourceHeight / 2);
-                return canvas;
+            } else {
+                canvas.width = sourceWidth;
+                canvas.height = sourceHeight;
             }
 
-            canvas.width = sourceWidth;
-            canvas.height = sourceHeight;
-            context.drawImage(image, 0, 0);
+            context.translate(canvas.width / 2, canvas.height / 2);
+            context.rotate((rotate * Math.PI) / 180);
+            context.drawImage(image, -sourceWidth / 2, -sourceHeight / 2);
             return canvas;
         }
 
@@ -604,8 +610,13 @@
             let left = renderOptions.cropCenterX * sourceWidth - cropWidth / 2;
             let top = renderOptions.cropCenterY * sourceHeight - cropHeight / 2;
 
-            left = clamp(left, 0, Math.max(0, sourceWidth - cropWidth));
-            top = clamp(top, 0, Math.max(0, sourceHeight - cropHeight));
+            if (cropWidth <= sourceWidth) {
+                left = clamp(left, 0, Math.max(0, sourceWidth - cropWidth));
+            }
+
+            if (cropHeight <= sourceHeight) {
+                top = clamp(top, 0, Math.max(0, sourceHeight - cropHeight));
+            }
 
             return {
                 left,
@@ -613,6 +624,39 @@
                 width: cropWidth,
                 height: cropHeight
             };
+        }
+
+        function drawViewportOnCanvas(context, sourceCanvas, viewportRect, targetWidth, targetHeight) {
+            context.fillStyle = '#ffffff';
+            context.fillRect(0, 0, targetWidth, targetHeight);
+
+            const visibleLeft = Math.max(0, viewportRect.left);
+            const visibleTop = Math.max(0, viewportRect.top);
+            const visibleRight = Math.min(sourceCanvas.width, viewportRect.left + viewportRect.width);
+            const visibleBottom = Math.min(sourceCanvas.height, viewportRect.top + viewportRect.height);
+
+            if (visibleRight <= visibleLeft || visibleBottom <= visibleTop) {
+                return;
+            }
+
+            const visibleWidth = visibleRight - visibleLeft;
+            const visibleHeight = visibleBottom - visibleTop;
+            const destX = ((visibleLeft - viewportRect.left) / viewportRect.width) * targetWidth;
+            const destY = ((visibleTop - viewportRect.top) / viewportRect.height) * targetHeight;
+            const destWidth = (visibleWidth / viewportRect.width) * targetWidth;
+            const destHeight = (visibleHeight / viewportRect.height) * targetHeight;
+
+            context.drawImage(
+                sourceCanvas,
+                visibleLeft,
+                visibleTop,
+                visibleWidth,
+                visibleHeight,
+                destX,
+                destY,
+                destWidth,
+                destHeight
+            );
         }
 
         function renderPreview() {
@@ -629,7 +673,6 @@
             if (!previewState.sourceImage) {
                 context.clearRect(0, 0, canvas.width, canvas.height);
                 placeholder.style.display = 'flex';
-                document.getElementById('previewSelectedName').textContent = '尚未选择图片';
                 return;
             }
 
@@ -654,17 +697,7 @@
             previewState.orientedHeight = sourceCanvas.height;
 
             context.clearRect(0, 0, canvas.width, canvas.height);
-            context.drawImage(
-                sourceCanvas,
-                cropRect.left,
-                cropRect.top,
-                cropRect.width,
-                cropRect.height,
-                0,
-                0,
-                dimensions.width,
-                dimensions.height
-            );
+            drawViewportOnCanvas(context, sourceCanvas, cropRect, dimensions.width, dimensions.height);
 
             context.strokeStyle = 'rgba(255, 255, 255, 0.92)';
             context.lineWidth = Math.max(2, Math.round(dimensions.width / 240));
@@ -675,9 +708,6 @@
                 dimensions.height - context.lineWidth
             );
 
-            document.getElementById('previewSelectedName').textContent = selectedImageData
-                ? `当前图片：${selectedImageData.original_name || selectedImageData.file_path}`
-                : '尚未选择图片';
         }
 
         function startPreviewDrag(event) {
