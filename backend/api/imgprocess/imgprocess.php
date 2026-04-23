@@ -38,7 +38,10 @@ function process_image_to_bmp($source_path, $options = []) {
     }
     
     $normalizedOptions = normalizeBmpOptions($options);
-    $cacheSignature = substr(md5(json_encode($normalizedOptions)), 0, 12);
+    $cacheSignature = substr(md5(json_encode([
+        'algorithm' => 'spectra6_fs_v1',
+        'options' => $normalizedOptions
+    ])), 0, 12);
     $bmp_name = pathinfo($relative_path, PATHINFO_FILENAME) . '__' . $cacheSignature . '.bmp';
     $relative_dir = dirname($relative_path);
     if ($relative_dir === '.' || $relative_dir === '/') {
@@ -315,7 +318,7 @@ function generate_bmp($input, $output, $options) {
     draw_viewport_resampled($dst, $src, $cropRect, $targetWidth, $targetHeight);
     imagedestroy($src);
 
-    apply_ordered_dither($dst, $targetWidth, $targetHeight);
+    apply_spectra6_dither($dst, $targetWidth, $targetHeight);
 
     $result = write_bmp_v3($dst, $output, $targetWidth, $targetHeight);
     imagedestroy($dst);
@@ -365,6 +368,90 @@ function apply_ordered_dither($img, $width, $height) {
             imagesetpixel($img, $x, $y, $color);
         }
     }
+}
+
+function apply_spectra6_dither($img, $width, $height) {
+    $palette = get_spectra6_palette();
+    $colorCache = [];
+    $currentErrors = create_error_row($width);
+
+    for ($y = 0; $y < $height; $y++) {
+        $nextErrors = create_error_row($width);
+
+        for ($x = 0; $x < $width; $x++) {
+            $rgb = imagecolorat($img, $x, $y);
+            $r = clamp_channel((($rgb >> 16) & 0xFF) + $currentErrors[$x + 1][0]);
+            $g = clamp_channel((($rgb >> 8) & 0xFF) + $currentErrors[$x + 1][1]);
+            $b = clamp_channel(($rgb & 0xFF) + $currentErrors[$x + 1][2]);
+
+            $nearest = find_nearest_color($r, $g, $b, $palette);
+            $paletteColor = $palette[$nearest];
+            $colorKey = implode(',', $paletteColor);
+
+            if (!isset($colorCache[$colorKey])) {
+                $colorCache[$colorKey] = imagecolorallocate($img, $paletteColor[0], $paletteColor[1], $paletteColor[2]);
+            }
+
+            imagesetpixel($img, $x, $y, $colorCache[$colorKey]);
+
+            $errorR = $r - $paletteColor[0];
+            $errorG = $g - $paletteColor[1];
+            $errorB = $b - $paletteColor[2];
+
+            diffuse_error($currentErrors[$x + 2], $errorR, $errorG, $errorB, 7 / 16);
+            diffuse_error($nextErrors[$x], $errorR, $errorG, $errorB, 3 / 16);
+            diffuse_error($nextErrors[$x + 1], $errorR, $errorG, $errorB, 5 / 16);
+            diffuse_error($nextErrors[$x + 2], $errorR, $errorG, $errorB, 1 / 16);
+        }
+
+        $currentErrors = $nextErrors;
+    }
+}
+
+function get_spectra6_palette() {
+    static $palette = null;
+
+    if ($palette !== null) {
+        return $palette;
+    }
+
+    $palette = [
+        [0, 0, 0],
+        [255, 255, 255],
+        [255, 255, 0],
+        [255, 0, 0],
+        [0, 0, 255],
+        [0, 255, 0]
+    ];
+
+    return $palette;
+}
+
+function create_error_row($width) {
+    $row = [];
+    for ($i = 0; $i < $width + 2; $i++) {
+        $row[$i] = [0.0, 0.0, 0.0];
+    }
+
+    return $row;
+}
+
+function clamp_channel($value) {
+    if ($value < 0) {
+        return 0;
+    }
+
+    if ($value > 255) {
+        return 255;
+    }
+
+    return (int) round($value);
+}
+
+function diffuse_error(array &$target, $errorR, $errorG, $errorB, $factor) {
+    $target[0] += $errorR * $factor;
+    $target[1] += $errorG * $factor;
+    $target[2] += $errorB * $factor;
 }
 
 function find_nearest_color($r, $g, $b, $palette) {
